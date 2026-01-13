@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#1a1a2e">
+    <title>Unrivaled Tracker</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header class="header">
+        <div class="header-content">
+            <h1 class="logo">UNRIVALED</h1>
+            <span class="tagline">Basketball Tracker</span>
+        </div>
+    </header>
+
+    <nav class="nav">
+        <button class="nav-btn active" data-section="standings">Standings</button>
+        <button class="nav-btn" data-section="schedule">Schedule</button>
+        <button class="nav-btn" data-section="scores">Scores</button>
+    </nav>
+
+    <main class="main">
+        <!-- Standings Section -->
+        <section id="standings" class="section active">
+            <div class="section-header">
+                <h2>Team Standings</h2>
+                <span class="season-label">2026 Season</span>
+            </div>
+            <div id="standings-list" class="standings-list">
+                <div class="loading">Loading standings...</div>
+            </div>
+        </section>
+
+        <!-- Schedule Section -->
+        <section id="schedule" class="section">
+            <div class="section-header">
+                <h2>Upcoming Games</h2>
+            </div>
+            <div id="schedule-list" class="game-list">
+                <div class="loading">Loading schedule...</div>
+            </div>
+        </section>
+
+        <!-- Scores Section -->
+        <section id="scores" class="section">
+            <div class="section-header">
+                <h2>Recent Scores</h2>
+                <span class="date-range">Last 14 Days</span>
+            </div>
+            <div id="scores-list" class="game-list">
+                <div class="loading">Loading scores...</div>
+            </div>
+        </section>
+
+        <!-- Team Detail Section -->
+        <section id="team-detail" class="section">
+            <button class="back-btn" id="back-btn">← Back</button>
+            <div id="team-header" class="team-header">
+                <div class="loading">Loading team...</div>
+            </div>
+            <div id="team-content" class="team-content">
+                <!-- Roster -->
+                <div class="team-section">
+                    <h3>Roster</h3>
+                    <div id="team-roster" class="roster-grid">
+                    </div>
+                </div>
+                <!-- Team Schedule -->
+                <div class="team-section">
+                    <h3>Schedule</h3>
+                    <div id="team-schedule" class="game-list">
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <p>Data from <a href="https://unrivaled.basketball" target="_blank">unrivaled.basketball</a></p>
+        <p class="last-updated">Last updated: <span id="last-updated">--</span></p>
+    </footer>
+
+    <!-- Hidden modal (kept for backwards compatibility) -->
+    <div id="api-modal" class="modal">
+        <div class="modal-content">
+            <h3>Loading...</h3>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
