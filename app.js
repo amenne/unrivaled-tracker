@@ -390,7 +390,7 @@ function getTeamData(teamSlug) {
     ) || { wins: 0, losses: 0, pct: 0 };
 
     // Get team's games from schedule
-    const teamGames = (state.schedule || []).filter(g =>
+    const teamGames = (state.schedule?.games || []).filter(g =>
         g.home?.name?.toLowerCase() === teamInfo.name.toLowerCase() ||
         g.away?.name?.toLowerCase() === teamInfo.name.toLowerCase()
     );
