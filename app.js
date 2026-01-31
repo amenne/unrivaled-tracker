@@ -2,12 +2,8 @@
 // Static GitHub Pages Version - No server required
 
 const CONFIG = {
-    // Multiple CORS proxies for fallback
-    CORS_PROXIES: [
-        'https://api.allorigins.win/raw?url=',
-        'https://corsproxy.io/?',
-        'https://api.codetabs.com/v1/proxy?quest='
-    ],
+    // CORS proxy for fetching from unrivaled.basketball
+    CORS_PROXY: 'https://corsproxy.io/?',
     UNRIVALED_BASE: 'https://www.unrivaled.basketball',
     CACHE_DURATION: 5 * 60 * 1000, // 5 minutes
     SCORES_DAYS: 14,
@@ -130,8 +126,7 @@ const TEAM_DATA = {
     }
 };
 
-// Fallback schedule data - shown only when live data fetch fails
-// Note: This data may be outdated. The app will display a warning banner when using fallback data.
+// Fallback schedule data (updated Jan 2026)
 const FALLBACK_SCHEDULE = [
     { date: '2026-01-05T19:00:00', home: 'Mist', away: 'Hive', home_points: 72, away_points: 56, status: 'closed' },
     { date: '2026-01-05T20:15:00', home: 'Laces', away: 'Vinyl', home_points: 58, away_points: 42, status: 'closed' },
@@ -197,9 +192,7 @@ const state = {
         standings: 0,
         schedule: 0,
         scores: 0
-    },
-    usingFallback: false, // Track if using fallback data
-    lastSuccessfulFetch: null // Track actual last successful fetch time
+    }
 };
 
 // DOM Elements
@@ -218,10 +211,7 @@ const elements = {
     teamHeader: document.getElementById('team-header'),
     teamRoster: document.getElementById('team-roster'),
     teamSchedule: document.getElementById('team-schedule'),
-    backBtn: document.getElementById('back-btn'),
-    // Data status elements
-    dataStatusBanner: document.getElementById('data-status-banner'),
-    retryFetchBtn: document.getElementById('retry-fetch')
+    backBtn: document.getElementById('back-btn')
 };
 
 // Initialize App
@@ -254,13 +244,6 @@ function setupEventListeners() {
     if (elements.backBtn) {
         elements.backBtn.addEventListener('click', () => {
             hideTeamDetail();
-        });
-    }
-
-    // Retry fetch button
-    if (elements.retryFetchBtn) {
-        elements.retryFetchBtn.addEventListener('click', () => {
-            loadAllData(true);
         });
     }
 
@@ -311,34 +294,20 @@ function saveApiKey() {
     }
 }
 
-// Fetch HTML through CORS proxy (tries multiple proxies)
+// Fetch HTML through CORS proxy
 async function fetchHTML(urlPath) {
-    const targetUrl = CONFIG.UNRIVALED_BASE + urlPath;
+    const fullUrl = `${CONFIG.CORS_PROXY}${encodeURIComponent(CONFIG.UNRIVALED_BASE + urlPath)}`;
 
-    for (const proxy of CONFIG.CORS_PROXIES) {
-        const fullUrl = `${proxy}${encodeURIComponent(targetUrl)}`;
-
-        try {
-            const response = await fetch(fullUrl, {
-                signal: AbortSignal.timeout(10000) // 10 second timeout per proxy
-            });
-            if (!response.ok) {
-                throw new Error(`HTTP error: ${response.status}`);
-            }
-            const text = await response.text();
-            // Verify we got valid HTML (not an error page)
-            if (text.includes('__NEXT_DATA__')) {
-                if (CONFIG.DEBUG) console.log(`Successfully fetched via ${proxy}`);
-                return text;
-            }
-            throw new Error('Invalid response - no Next.js data found');
-        } catch (error) {
-            console.warn(`Proxy ${proxy} failed:`, error.message);
-            continue; // Try next proxy
+    try {
+        const response = await fetch(fullUrl);
+        if (!response.ok) {
+            throw new Error(`HTTP error: ${response.status}`);
         }
+        return await response.text();
+    } catch (error) {
+        console.error('Fetch error:', error);
+        throw error;
     }
-
-    throw new Error('All CORS proxies failed');
 }
 
 // Parse standings from HTML (Next.js __NEXT_DATA__)
@@ -466,8 +435,6 @@ async function loadAllData(forceRefresh = false) {
             state.lastFetch.standings = now;
             state.lastFetch.schedule = now;
             state.lastFetch.scores = now;
-            state.usingFallback = false;
-            state.lastSuccessfulFetch = new Date();
 
             renderStandings({ standings: data.standings });
             renderSchedule({ games: data.schedule });
@@ -477,7 +444,6 @@ async function loadAllData(forceRefresh = false) {
             // Use fallback data
             state.standings = FALLBACK_STANDINGS;
             state.schedule = { games: FALLBACK_SCHEDULE };
-            state.usingFallback = true;
 
             renderStandings({ standings: FALLBACK_STANDINGS });
             renderSchedule({ games: FALLBACK_SCHEDULE });
@@ -910,33 +876,9 @@ function formatTime(date) {
 }
 
 function updateLastUpdated() {
+    const now = new Date();
     const options = { hour: 'numeric', minute: '2-digit', hour12: true };
-
-    if (state.usingFallback) {
-        elements.lastUpdated.textContent = 'Using offline data (live fetch failed)';
-        elements.lastUpdated.style.color = '#ff6b6b';
-    } else if (state.lastSuccessfulFetch) {
-        const timeStr = state.lastSuccessfulFetch.toLocaleTimeString('en-US', options);
-        elements.lastUpdated.textContent = timeStr;
-        elements.lastUpdated.style.color = '';
-    } else {
-        const now = new Date();
-        elements.lastUpdated.textContent = now.toLocaleTimeString('en-US', options);
-        elements.lastUpdated.style.color = '';
-    }
-
-    // Update data status banner
-    updateDataStatusBanner();
-}
-
-function updateDataStatusBanner() {
-    if (!elements.dataStatusBanner) return;
-
-    if (state.usingFallback) {
-        elements.dataStatusBanner.style.display = 'flex';
-    } else {
-        elements.dataStatusBanner.style.display = 'none';
-    }
+    elements.lastUpdated.textContent = now.toLocaleTimeString('en-US', options);
 }
 
 // ==================== //
