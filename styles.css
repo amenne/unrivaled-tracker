@@ -119,6 +119,46 @@ body {
     color: var(--text-primary);
 }
 
+/* Data Status Banner */
+.data-status-banner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 16px;
+    background: linear-gradient(135deg, #8b4513 0%, #a0522d 100%);
+    color: #fff;
+    font-size: 0.8125rem;
+    text-align: center;
+    flex-wrap: wrap;
+}
+
+.data-status-banner .status-icon {
+    font-size: 1rem;
+}
+
+.data-status-banner .status-text {
+    flex: 1;
+    min-width: 200px;
+}
+
+.data-status-banner .retry-btn {
+    padding: 6px 12px;
+    background: rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: var(--radius-sm);
+    color: #fff;
+    font-family: var(--font-family);
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.data-status-banner .retry-btn:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
 /* Main Content */
 .main {
     padding: 16px;
