@@ -349,15 +349,21 @@ function parseStandings(html) {
         try {
             const nextData = JSON.parse(nextDataMatch[1]);
             const pageProps = nextData?.props?.pageProps;
+            console.log('Standings pageProps keys:', Object.keys(pageProps || {}));
             if (pageProps?.standings) {
+                console.log('Found standings:', pageProps.standings.length, 'teams');
                 return pageProps.standings;
             }
             if (pageProps?.teams) {
+                console.log('Found teams:', pageProps.teams.length, 'teams');
                 return pageProps.teams;
             }
+            console.warn('No standings or teams found in pageProps');
         } catch (e) {
             console.log('Could not parse Next.js data:', e.message);
         }
+    } else {
+        console.warn('No __NEXT_DATA__ script found in standings HTML');
     }
 
     return null; // Will use fallback
@@ -371,8 +377,10 @@ function parseSchedule(html) {
         try {
             const nextData = JSON.parse(nextDataMatch[1]);
             const pageProps = nextData?.props?.pageProps;
+            console.log('Schedule pageProps keys:', Object.keys(pageProps || {}));
             if (pageProps?.games || pageProps?.schedule) {
                 const games = pageProps.games || pageProps.schedule;
+                console.log('Found games:', games.length, 'games');
                 return games.map(g => ({
                     ...g,
                     scheduled: g.date || g.scheduled,
@@ -381,9 +389,12 @@ function parseSchedule(html) {
                     venue: g.venue || { name: 'Mediapro Sports Center, Miami' }
                 }));
             }
+            console.warn('No games or schedule found in pageProps');
         } catch (e) {
             console.log('Could not parse Next.js schedule data:', e.message);
         }
+    } else {
+        console.warn('No __NEXT_DATA__ script found in schedule HTML');
     }
 
     return null; // Will use fallback
@@ -397,15 +408,29 @@ async function fetchLiveData() {
             fetchHTML('/schedule')
         ]);
 
-        const standings = parseStandings(standingsHtml) || FALLBACK_STANDINGS;
-        const schedule = parseSchedule(scheduleHtml) || FALLBACK_SCHEDULE;
+        const parsedStandings = parseStandings(standingsHtml);
+        const parsedSchedule = parseSchedule(scheduleHtml);
 
-        return { standings, schedule };
+        // Track if we had to use fallback for either data type
+        const standingsFromFallback = !parsedStandings;
+        const scheduleFromFallback = !parsedSchedule;
+        const usingFallback = standingsFromFallback || scheduleFromFallback;
+
+        if (usingFallback) {
+            console.warn('Live fetch succeeded but parsing failed - using fallback data');
+        }
+
+        return {
+            standings: parsedStandings || FALLBACK_STANDINGS,
+            schedule: parsedSchedule || FALLBACK_SCHEDULE,
+            usingFallback
+        };
     } catch (error) {
         console.log('Using fallback data:', error.message);
         return {
             standings: FALLBACK_STANDINGS,
-            schedule: FALLBACK_SCHEDULE
+            schedule: FALLBACK_SCHEDULE,
+            usingFallback: true
         };
     }
 }
@@ -466,8 +491,10 @@ async function loadAllData(forceRefresh = false) {
             state.lastFetch.standings = now;
             state.lastFetch.schedule = now;
             state.lastFetch.scores = now;
-            state.usingFallback = false;
-            state.lastSuccessfulFetch = new Date();
+            state.usingFallback = data.usingFallback || false;
+            if (!data.usingFallback) {
+                state.lastSuccessfulFetch = new Date();
+            }
 
             renderStandings({ standings: data.standings });
             renderSchedule({ games: data.schedule });
@@ -930,10 +957,17 @@ function updateLastUpdated() {
 }
 
 function updateDataStatusBanner() {
-    if (!elements.dataStatusBanner) return;
+    if (!elements.dataStatusBanner) {
+        console.warn('Data status banner element not found');
+        return;
+    }
+
+    console.log('Updating banner, usingFallback:', state.usingFallback);
 
     if (state.usingFallback) {
         elements.dataStatusBanner.style.display = 'flex';
+        elements.dataStatusBanner.querySelector('.status-text').textContent =
+            'Unable to fetch live data. Standings and scores may be outdated.';
     } else {
         elements.dataStatusBanner.style.display = 'none';
     }
