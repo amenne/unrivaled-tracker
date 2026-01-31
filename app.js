@@ -2,8 +2,13 @@
 // Static GitHub Pages Version - No server required
 
 const CONFIG = {
-    // Multiple CORS proxies for fallback - tries each in order
+    // CORS proxies - tries each in order until one works
+    // To set up your own reliable proxy, see cloudflare-worker/README.md
     CORS_PROXIES: [
+        // Add your Cloudflare Worker URL here (recommended):
+        // 'https://your-worker-name.your-subdomain.workers.dev',
+
+        // Public proxies (less reliable fallbacks):
         'https://corsproxy.org/?',
         'https://api.allorigins.win/raw?url=',
         'https://corsproxy.io/?',
