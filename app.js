@@ -351,12 +351,12 @@ async function fetchHTML(urlPath) {
 
             if (CONFIG.DEBUG) console.log(`Response length: ${text.length} chars`);
 
-            // Verify we got valid HTML (not an error page)
-            if (text.includes('__NEXT_DATA__')) {
+            // Verify we got valid HTML (check for Unrivaled content)
+            if (text.includes('unrivaled') || text.includes('Standings') || text.includes('standings')) {
                 console.log(`✓ Successfully fetched via ${proxy}`);
                 return text;
             }
-            throw new Error('Invalid response - no Next.js data found');
+            throw new Error('Invalid response - no Unrivaled content found');
         } catch (error) {
             console.warn(`✗ Proxy ${proxy} failed:`, error.message);
             continue; // Try next proxy
@@ -366,62 +366,85 @@ async function fetchHTML(urlPath) {
     throw new Error('All CORS proxies failed');
 }
 
-// Parse standings from HTML (Next.js __NEXT_DATA__)
+// Parse standings from HTML (extracts from server-rendered table)
 function parseStandings(html) {
-    const nextDataMatch = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
+    const teams = [];
 
-    if (nextDataMatch) {
-        try {
-            const nextData = JSON.parse(nextDataMatch[1]);
-            const pageProps = nextData?.props?.pageProps;
-            console.log('Standings pageProps keys:', Object.keys(pageProps || {}));
-            if (pageProps?.standings) {
-                console.log('Found standings:', pageProps.standings.length, 'teams');
-                return pageProps.standings;
-            }
-            if (pageProps?.teams) {
-                console.log('Found teams:', pageProps.teams.length, 'teams');
-                return pageProps.teams;
-            }
-            console.warn('No standings or teams found in pageProps');
-        } catch (e) {
-            console.log('Could not parse Next.js data:', e.message);
-        }
-    } else {
-        console.warn('No __NEXT_DATA__ script found in standings HTML');
+    // Try to extract from table rows - the HTML has standings in a table
+    // Pattern: <td class="p-8">9</td><td class="p-8">2</td><td class="p-8">.818</td>
+    const tableRegex = /<a[^>]*href="\/([^"]+)"[^>]*>[\s\S]*?<\/a><\/td><td[^>]*>(\d+)<\/td><td[^>]*>(\d+)<\/td><td[^>]*>([\d.]+)<\/td>/g;
+
+    let match;
+    while ((match = tableRegex.exec(html)) !== null) {
+        const teamSlug = match[1];
+        const wins = parseInt(match[2]);
+        const losses = parseInt(match[3]);
+        const pct = parseFloat(match[4]);
+
+        // Convert slug to proper name
+        const teamName = teamSlug.split('-').map(word =>
+            word.charAt(0).toUpperCase() + word.slice(1)
+        ).join(' ');
+
+        teams.push({
+            name: teamName.charAt(0).toUpperCase() + teamName.slice(1),
+            wins,
+            losses,
+            pct
+        });
     }
 
+    if (teams.length > 0) {
+        console.log('Parsed standings:', teams.length, 'teams from HTML table');
+        return teams;
+    }
+
+    console.warn('Could not parse standings from HTML');
     return null; // Will use fallback
 }
 
-// Parse schedule from HTML
+// Parse schedule from HTML (extracts from server-rendered game cards)
 function parseSchedule(html) {
-    const nextDataMatch = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
+    const games = [];
 
-    if (nextDataMatch) {
-        try {
-            const nextData = JSON.parse(nextDataMatch[1]);
-            const pageProps = nextData?.props?.pageProps;
-            console.log('Schedule pageProps keys:', Object.keys(pageProps || {}));
-            if (pageProps?.games || pageProps?.schedule) {
-                const games = pageProps.games || pageProps.schedule;
-                console.log('Found games:', games.length, 'games');
-                return games.map(g => ({
-                    ...g,
-                    scheduled: g.date || g.scheduled,
-                    home: typeof g.home === 'string' ? { name: g.home, alias: g.home } : g.home,
-                    away: typeof g.away === 'string' ? { name: g.away, alias: g.away } : g.away,
-                    venue: g.venue || { name: 'Mediapro Sports Center, Miami' }
-                }));
-            }
-            console.warn('No games or schedule found in pageProps');
-        } catch (e) {
-            console.log('Could not parse Next.js schedule data:', e.message);
-        }
-    } else {
-        console.warn('No __NEXT_DATA__ script found in schedule HTML');
+    // Extract game data from the HTML structure
+    // Look for Final games: <span class="font-11 weight-500">76</span> (scores)
+    const finalGameRegex = /<a[^>]*href="\/game\/([^"]+)"[^>]*>[\s\S]*?<span[^>]*>Final<\/span>[\s\S]*?uppercase">([^<]+)<\/span>[\s\S]*?weight-500">(\d+)<\/span>[\s\S]*?uppercase">([^<]+)<\/span>[\s\S]*?weight-500">(\d+)<\/span>/g;
+
+    let match;
+    while ((match = finalGameRegex.exec(html)) !== null) {
+        games.push({
+            id: match[1],
+            away: { name: match[2], alias: match[2] },
+            away_points: parseInt(match[3]),
+            home: { name: match[4], alias: match[4] },
+            home_points: parseInt(match[5]),
+            status: 'closed',
+            scheduled: new Date().toISOString(), // We'll use current date for now
+            venue: { name: 'Mediapro Sports Center, Miami' }
+        });
     }
 
+    // Extract upcoming games: <span class="font-10 uppercase clamp1 weight-500 opacity-60">7:30 PM ET</span>
+    const upcomingGameRegex = /<a[^>]*href="\/game\/([^"]+)"[^>]*>[\s\S]*?opacity-60">([^<]+)<\/span>[\s\S]*?uppercase">([^<]+)<\/span>[\s\S]*?uppercase">([^<]+)<\/span>/g;
+
+    while ((match = upcomingGameRegex.exec(html)) !== null) {
+        games.push({
+            id: match[1],
+            scheduled: new Date().toISOString(), // Placeholder
+            away: { name: match[3], alias: match[3] },
+            home: { name: match[4], alias: match[4] },
+            status: 'scheduled',
+            venue: { name: 'Mediapro Sports Center, Miami' }
+        });
+    }
+
+    if (games.length > 0) {
+        console.log('Parsed schedule:', games.length, 'games from HTML');
+        return games;
+    }
+
+    console.warn('Could not parse schedule from HTML');
     return null; // Will use fallback
 }
 
