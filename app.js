@@ -5,15 +5,15 @@ const CONFIG = {
     // CORS proxies - tries each in order until one works
     // To set up your own reliable proxy, see cloudflare-worker/README.md
     CORS_PROXIES: [
-        // Add your Cloudflare Worker URL here (recommended):
-        // 'https://your-worker-name.your-subdomain.workers.dev',
+        // Cloudflare Worker proxy (reliable) - receives path directly:
+        { url: 'https://unrivaled-proxy.amenne.workers.dev', pathOnly: true },
 
-        // Public proxies (less reliable fallbacks):
-        'https://corsproxy.org/?',
-        'https://api.allorigins.win/raw?url=',
-        'https://corsproxy.io/?',
-        'https://proxy.cors.sh/',
-        'https://api.codetabs.com/v1/proxy?quest='
+        // Public proxies (fallbacks) - receive full encoded URL:
+        { url: 'https://corsproxy.org/?' },
+        { url: 'https://api.allorigins.win/raw?url=' },
+        { url: 'https://corsproxy.io/?' },
+        { url: 'https://proxy.cors.sh/' },
+        { url: 'https://api.codetabs.com/v1/proxy?quest=' }
     ],
     UNRIVALED_BASE: 'https://www.unrivaled.basketball',
     CACHE_DURATION: 5 * 60 * 1000, // 5 minutes
@@ -323,13 +323,13 @@ async function fetchHTML(urlPath) {
     const targetUrl = CONFIG.UNRIVALED_BASE + urlPath;
 
     for (const proxy of CONFIG.CORS_PROXIES) {
-        // Some proxies want encoded URL, others want raw URL
-        const needsEncoding = proxy.includes('?') || proxy.includes('allorigins') || proxy.includes('codetabs');
-        const fullUrl = needsEncoding
-            ? `${proxy}${encodeURIComponent(targetUrl)}`
-            : `${proxy}${targetUrl}`;
+        // pathOnly proxies (Cloudflare Worker): just append the path
+        // Other proxies: append the full encoded target URL
+        const fullUrl = proxy.pathOnly
+            ? `${proxy.url}${urlPath}`
+            : `${proxy.url}${encodeURIComponent(targetUrl)}`;
 
-        if (CONFIG.DEBUG) console.log(`Trying proxy: ${proxy}`);
+        if (CONFIG.DEBUG) console.log(`Trying proxy: ${proxy.url}`);
 
         try {
             const response = await fetch(fullUrl, {
@@ -339,7 +339,7 @@ async function fetchHTML(urlPath) {
                 }
             });
 
-            if (CONFIG.DEBUG) console.log(`Proxy ${proxy} responded with status: ${response.status}`);
+            if (CONFIG.DEBUG) console.log(`Proxy ${proxy.url} responded with status: ${response.status}`);
 
             if (!response.ok) {
                 throw new Error(`HTTP error: ${response.status}`);
@@ -350,12 +350,12 @@ async function fetchHTML(urlPath) {
 
             // Verify we got valid HTML (not an error page)
             if (text.includes('__NEXT_DATA__')) {
-                console.log(`✓ Successfully fetched via ${proxy}`);
+                console.log(`✓ Successfully fetched via ${proxy.url}`);
                 return text;
             }
             throw new Error('Invalid response - no Next.js data found');
         } catch (error) {
-            console.warn(`✗ Proxy ${proxy} failed:`, error.message);
+            console.warn(`✗ Proxy ${proxy.url} failed:`, error.message);
             continue; // Try next proxy
         }
     }
