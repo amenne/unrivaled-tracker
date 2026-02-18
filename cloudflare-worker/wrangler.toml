@@ -1,0 +1,6 @@
+name = "unrivaled-proxy"
+main = "worker.js"
+compatibility_date = "2026-01-31"
+
+# Route configuration - the worker will handle all requests to your worker subdomain
+# No additional routes configuration needed for *.workers.dev domains
