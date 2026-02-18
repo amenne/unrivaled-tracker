@@ -2,23 +2,11 @@
 // Static GitHub Pages Version - No server required
 
 const CONFIG = {
-    // CORS proxies - tries each in order until one works
-    // To set up your own reliable proxy, see cloudflare-worker/README.md
-    CORS_PROXIES: [
-        // Cloudflare Worker proxy (reliable) - receives path directly:
-        { url: 'https://unrivaled-proxy.amenne.workers.dev', pathOnly: true },
-
-        // Public proxies (fallbacks) - receive full encoded URL:
-        { url: 'https://corsproxy.org/?' },
-        { url: 'https://api.allorigins.win/raw?url=' },
-        { url: 'https://corsproxy.io/?' },
-        { url: 'https://proxy.cors.sh/' },
-        { url: 'https://api.codetabs.com/v1/proxy?quest=' }
-    ],
+    WORKER_URL: 'https://unrivaled-proxy.amenne.workers.dev',
     UNRIVALED_BASE: 'https://www.unrivaled.basketball',
     CACHE_DURATION: 5 * 60 * 1000, // 5 minutes
     SCORES_DAYS: 14,
-    DEBUG: true  // Enable debug logging to console
+    DEBUG: true
 };
 
 // Team data with rosters (embedded for static hosting)
@@ -318,49 +306,30 @@ function saveApiKey() {
     }
 }
 
-// Fetch HTML through CORS proxy (tries multiple proxies)
+// Fetch HTML through Cloudflare Worker
 async function fetchHTML(urlPath) {
-    const targetUrl = CONFIG.UNRIVALED_BASE + urlPath;
+    const url = `${CONFIG.WORKER_URL}${urlPath}`;
 
-    for (const proxy of CONFIG.CORS_PROXIES) {
-        // pathOnly proxies (Cloudflare Worker): just append the path
-        // Other proxies: append the full encoded target URL
-        const fullUrl = proxy.pathOnly
-            ? `${proxy.url}${urlPath}`
-            : `${proxy.url}${encodeURIComponent(targetUrl)}`;
+    if (CONFIG.DEBUG) console.log(`Fetching: ${url}`);
 
-        if (CONFIG.DEBUG) console.log(`Trying proxy: ${proxy.url}`);
+    const response = await fetch(url, {
+        signal: AbortSignal.timeout(10000)
+    });
 
-        try {
-            const response = await fetch(fullUrl, {
-                signal: AbortSignal.timeout(10000), // 10 second timeout per proxy
-                headers: {
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-                }
-            });
-
-            if (CONFIG.DEBUG) console.log(`Proxy ${proxy.url} responded with status: ${response.status}`);
-
-            if (!response.ok) {
-                throw new Error(`HTTP error: ${response.status}`);
-            }
-            const text = await response.text();
-
-            if (CONFIG.DEBUG) console.log(`Response length: ${text.length} chars`);
-
-            // Verify we got valid HTML (not an error page)
-            if (text.includes('__NEXT_DATA__')) {
-                console.log(`✓ Successfully fetched via ${proxy.url}`);
-                return text;
-            }
-            throw new Error('Invalid response - no Next.js data found');
-        } catch (error) {
-            console.warn(`✗ Proxy ${proxy.url} failed:`, error.message);
-            continue; // Try next proxy
-        }
+    if (!response.ok) {
+        throw new Error(`Worker responded with HTTP ${response.status}`);
     }
 
-    throw new Error('All CORS proxies failed');
+    const text = await response.text();
+
+    if (CONFIG.DEBUG) console.log(`Response length: ${text.length} chars`);
+
+    if (!text.includes('__NEXT_DATA__')) {
+        throw new Error('Worker response missing Next.js data');
+    }
+
+    console.log(`✓ Fetched ${urlPath} successfully`);
+    return text;
 }
 
 // Parse standings from HTML (Next.js __NEXT_DATA__)
