@@ -3,12 +3,11 @@
 
 const CONFIG = {
     // CORS proxies - tries each in order until one works
-    // Your Cloudflare Worker is tried first (most reliable)
     CORS_PROXIES: [
-        // Cloudflare Worker (primary, most reliable):
-        'https://unrivaled-proxy.amenne.workers.dev',
+        // TODO: Add your Cloudflare Worker here once it's properly deployed
+        // 'https://unrivaled-proxy.amenne.workers.dev',
 
-        // Public proxies (fallbacks):
+        // Public proxies:
         'https://corsproxy.org/?',
         'https://api.allorigins.win/raw?url=',
         'https://corsproxy.io/?',
