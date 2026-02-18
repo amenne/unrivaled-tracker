@@ -2,11 +2,23 @@
 // Static GitHub Pages Version - No server required
 
 const CONFIG = {
-    // Cloudflare worker proxy for fetching from unrivaled.basketball
-    WORKER_PROXY: 'https://unrivaled-proxy.amenne.workers.dev',
+    // CORS proxies - tries each in order until one works
+    // Your Cloudflare Worker is tried first (most reliable)
+    CORS_PROXIES: [
+        // Cloudflare Worker (primary, most reliable):
+        'https://unrivaled-proxy.amenne.workers.dev',
+
+        // Public proxies (fallbacks):
+        'https://corsproxy.org/?',
+        'https://api.allorigins.win/raw?url=',
+        'https://corsproxy.io/?',
+        'https://proxy.cors.sh/',
+        'https://api.codetabs.com/v1/proxy?quest='
+    ],
+    UNRIVALED_BASE: 'https://www.unrivaled.basketball',
     CACHE_DURATION: 5 * 60 * 1000, // 5 minutes
     SCORES_DAYS: 14,
-    DEBUG: false
+    DEBUG: true  // Enable debug logging to console
 };
 
 // Team data with rosters (embedded for static hosting)
@@ -125,7 +137,8 @@ const TEAM_DATA = {
     }
 };
 
-// Fallback schedule data (updated Jan 2026)
+// Fallback schedule data - shown only when live data fetch fails
+// Note: This data may be outdated. The app will display a warning banner when using fallback data.
 const FALLBACK_SCHEDULE = [
     { date: '2026-01-05T19:00:00', home: 'Mist', away: 'Hive', home_points: 72, away_points: 56, status: 'closed' },
     { date: '2026-01-05T20:15:00', home: 'Laces', away: 'Vinyl', home_points: 58, away_points: 42, status: 'closed' },
@@ -191,7 +204,9 @@ const state = {
         standings: 0,
         schedule: 0,
         scores: 0
-    }
+    },
+    usingFallback: false, // Track if using fallback data
+    lastSuccessfulFetch: null // Track actual last successful fetch time
 };
 
 // DOM Elements
@@ -210,7 +225,10 @@ const elements = {
     teamHeader: document.getElementById('team-header'),
     teamRoster: document.getElementById('team-roster'),
     teamSchedule: document.getElementById('team-schedule'),
-    backBtn: document.getElementById('back-btn')
+    backBtn: document.getElementById('back-btn'),
+    // Data status elements
+    dataStatusBanner: document.getElementById('data-status-banner'),
+    retryFetchBtn: document.getElementById('retry-fetch')
 };
 
 // Initialize App
@@ -243,6 +261,13 @@ function setupEventListeners() {
     if (elements.backBtn) {
         elements.backBtn.addEventListener('click', () => {
             hideTeamDetail();
+        });
+    }
+
+    // Retry fetch button
+    if (elements.retryFetchBtn) {
+        elements.retryFetchBtn.addEventListener('click', () => {
+            loadAllData(true);
         });
     }
 
@@ -293,21 +318,52 @@ function saveApiKey() {
     }
 }
 
-// Fetch HTML through Cloudflare worker
+// Fetch HTML through CORS proxy (tries multiple proxies)
+// Cloudflare worker is tried first, then falls back to public proxies
 async function fetchHTML(urlPath) {
-    const fullUrl = `${CONFIG.WORKER_PROXY}${urlPath}`;
+    const targetUrl = CONFIG.UNRIVALED_BASE + urlPath;
 
-    try {
-        console.log('Fetching from worker:', fullUrl);
-        const response = await fetch(fullUrl);
-        if (!response.ok) {
-            throw new Error(`HTTP error: ${response.status}`);
+    for (const proxy of CONFIG.CORS_PROXIES) {
+        // Cloudflare worker doesn't need URL encoding or prefix
+        const isWorker = proxy.includes('workers.dev');
+        const fullUrl = isWorker
+            ? `${proxy}${urlPath}`
+            : proxy.includes('?') || proxy.includes('allorigins') || proxy.includes('codetabs')
+                ? `${proxy}${encodeURIComponent(targetUrl)}`
+                : `${proxy}${targetUrl}`;
+
+        if (CONFIG.DEBUG) console.log(`Trying proxy: ${proxy}`);
+
+        try {
+            const response = await fetch(fullUrl, {
+                signal: AbortSignal.timeout(10000), // 10 second timeout per proxy
+                headers: {
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+                }
+            });
+
+            if (CONFIG.DEBUG) console.log(`Proxy ${proxy} responded with status: ${response.status}`);
+
+            if (!response.ok) {
+                throw new Error(`HTTP error: ${response.status}`);
+            }
+            const text = await response.text();
+
+            if (CONFIG.DEBUG) console.log(`Response length: ${text.length} chars`);
+
+            // Verify we got valid HTML (not an error page)
+            if (text.includes('__NEXT_DATA__')) {
+                console.log(`✓ Successfully fetched via ${proxy}`);
+                return text;
+            }
+            throw new Error('Invalid response - no Next.js data found');
+        } catch (error) {
+            console.warn(`✗ Proxy ${proxy} failed:`, error.message);
+            continue; // Try next proxy
         }
-        return await response.text();
-    } catch (error) {
-        console.error('Fetch error:', error);
-        throw error;
     }
+
+    throw new Error('All CORS proxies failed');
 }
 
 // Parse standings from HTML (Next.js __NEXT_DATA__)
@@ -318,15 +374,21 @@ function parseStandings(html) {
         try {
             const nextData = JSON.parse(nextDataMatch[1]);
             const pageProps = nextData?.props?.pageProps;
+            console.log('Standings pageProps keys:', Object.keys(pageProps || {}));
             if (pageProps?.standings) {
+                console.log('Found standings:', pageProps.standings.length, 'teams');
                 return pageProps.standings;
             }
             if (pageProps?.teams) {
+                console.log('Found teams:', pageProps.teams.length, 'teams');
                 return pageProps.teams;
             }
+            console.warn('No standings or teams found in pageProps');
         } catch (e) {
             console.log('Could not parse Next.js data:', e.message);
         }
+    } else {
+        console.warn('No __NEXT_DATA__ script found in standings HTML');
     }
 
     return null; // Will use fallback
@@ -340,8 +402,10 @@ function parseSchedule(html) {
         try {
             const nextData = JSON.parse(nextDataMatch[1]);
             const pageProps = nextData?.props?.pageProps;
+            console.log('Schedule pageProps keys:', Object.keys(pageProps || {}));
             if (pageProps?.games || pageProps?.schedule) {
                 const games = pageProps.games || pageProps.schedule;
+                console.log('Found games:', games.length, 'games');
                 return games.map(g => ({
                     ...g,
                     scheduled: g.date || g.scheduled,
@@ -350,9 +414,12 @@ function parseSchedule(html) {
                     venue: g.venue || { name: 'Mediapro Sports Center, Miami' }
                 }));
             }
+            console.warn('No games or schedule found in pageProps');
         } catch (e) {
             console.log('Could not parse Next.js schedule data:', e.message);
         }
+    } else {
+        console.warn('No __NEXT_DATA__ script found in schedule HTML');
     }
 
     return null; // Will use fallback
@@ -366,15 +433,29 @@ async function fetchLiveData() {
             fetchHTML('/schedule')
         ]);
 
-        const standings = parseStandings(standingsHtml) || FALLBACK_STANDINGS;
-        const schedule = parseSchedule(scheduleHtml) || FALLBACK_SCHEDULE;
+        const parsedStandings = parseStandings(standingsHtml);
+        const parsedSchedule = parseSchedule(scheduleHtml);
 
-        return { standings, schedule };
+        // Track if we had to use fallback for either data type
+        const standingsFromFallback = !parsedStandings;
+        const scheduleFromFallback = !parsedSchedule;
+        const usingFallback = standingsFromFallback || scheduleFromFallback;
+
+        if (usingFallback) {
+            console.warn('Live fetch succeeded but parsing failed - using fallback data');
+        }
+
+        return {
+            standings: parsedStandings || FALLBACK_STANDINGS,
+            schedule: parsedSchedule || FALLBACK_SCHEDULE,
+            usingFallback
+        };
     } catch (error) {
         console.log('Using fallback data:', error.message);
         return {
             standings: FALLBACK_STANDINGS,
-            schedule: FALLBACK_SCHEDULE
+            schedule: FALLBACK_SCHEDULE,
+            usingFallback: true
         };
     }
 }
@@ -435,6 +516,10 @@ async function loadAllData(forceRefresh = false) {
             state.lastFetch.standings = now;
             state.lastFetch.schedule = now;
             state.lastFetch.scores = now;
+            state.usingFallback = data.usingFallback || false;
+            if (!data.usingFallback) {
+                state.lastSuccessfulFetch = new Date();
+            }
 
             renderStandings({ standings: data.standings });
             renderSchedule({ games: data.schedule });
@@ -444,6 +529,7 @@ async function loadAllData(forceRefresh = false) {
             // Use fallback data
             state.standings = FALLBACK_STANDINGS;
             state.schedule = { games: FALLBACK_SCHEDULE };
+            state.usingFallback = true;
 
             renderStandings({ standings: FALLBACK_STANDINGS });
             renderSchedule({ games: FALLBACK_SCHEDULE });
@@ -876,9 +962,40 @@ function formatTime(date) {
 }
 
 function updateLastUpdated() {
-    const now = new Date();
     const options = { hour: 'numeric', minute: '2-digit', hour12: true };
-    elements.lastUpdated.textContent = now.toLocaleTimeString('en-US', options);
+
+    if (state.usingFallback) {
+        elements.lastUpdated.textContent = 'Using offline data (live fetch failed)';
+        elements.lastUpdated.style.color = '#ff6b6b';
+    } else if (state.lastSuccessfulFetch) {
+        const timeStr = state.lastSuccessfulFetch.toLocaleTimeString('en-US', options);
+        elements.lastUpdated.textContent = timeStr;
+        elements.lastUpdated.style.color = '';
+    } else {
+        const now = new Date();
+        elements.lastUpdated.textContent = now.toLocaleTimeString('en-US', options);
+        elements.lastUpdated.style.color = '';
+    }
+
+    // Update data status banner
+    updateDataStatusBanner();
+}
+
+function updateDataStatusBanner() {
+    if (!elements.dataStatusBanner) {
+        console.warn('Data status banner element not found');
+        return;
+    }
+
+    console.log('Updating banner, usingFallback:', state.usingFallback);
+
+    if (state.usingFallback) {
+        elements.dataStatusBanner.style.display = 'flex';
+        elements.dataStatusBanner.querySelector('.status-text').textContent =
+            'Unable to fetch live data. Standings and scores may be outdated.';
+    } else {
+        elements.dataStatusBanner.style.display = 'none';
+    }
 }
 
 // ==================== //
