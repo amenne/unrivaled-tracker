@@ -2,9 +2,8 @@
 // Static GitHub Pages Version - No server required
 
 const CONFIG = {
-    // CORS proxy for fetching from unrivaled.basketball
-    CORS_PROXY: 'https://corsproxy.io/?',
-    UNRIVALED_BASE: 'https://www.unrivaled.basketball',
+    // Cloudflare worker proxy for fetching from unrivaled.basketball
+    WORKER_PROXY: 'https://unrivaled-proxy.amenne.workers.dev',
     CACHE_DURATION: 5 * 60 * 1000, // 5 minutes
     SCORES_DAYS: 14,
     DEBUG: false
@@ -294,11 +293,12 @@ function saveApiKey() {
     }
 }
 
-// Fetch HTML through CORS proxy
+// Fetch HTML through Cloudflare worker
 async function fetchHTML(urlPath) {
-    const fullUrl = `${CONFIG.CORS_PROXY}${encodeURIComponent(CONFIG.UNRIVALED_BASE + urlPath)}`;
+    const fullUrl = `${CONFIG.WORKER_PROXY}${urlPath}`;
 
     try {
+        console.log('Fetching from worker:', fullUrl);
         const response = await fetch(fullUrl);
         if (!response.ok) {
             throw new Error(`HTTP error: ${response.status}`);
