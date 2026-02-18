@@ -370,24 +370,41 @@ async function fetchHTML(urlPath) {
 function parseStandings(html) {
     const teams = [];
 
-    // Try to extract from table rows - the HTML has standings in a table
-    // Pattern: <td class="p-8">9</td><td class="p-8">2</td><td class="p-8">.818</td>
-    const tableRegex = /<a[^>]*href="\/([^"]+)"[^>]*>[\s\S]*?<\/a><\/td><td[^>]*>(\d+)<\/td><td[^>]*>(\d+)<\/td><td[^>]*>([\d.]+)<\/td>/g;
+    // First, extract only the <tbody> section from the standings table
+    // This avoids matching game URLs that appear before the table
+    const tbodyMatch = html.match(/<tbody>([\s\S]*?)<\/tbody>/);
+    if (!tbodyMatch) {
+        console.warn('Could not find <tbody> in standings HTML');
+        return null;
+    }
+
+    const tbodyHtml = tbodyMatch[1];
+
+    // Now extract team data from table rows in tbody only
+    // Pattern: href="/team-slug" followed by W, L, PCT in table cells
+    // Exclude game URLs by ensuring the href doesn't start with /game/
+    const tableRegex = /<a[^>]*href="\/([a-z-]+)"[^>]*>[\s\S]*?<\/a><\/td><td[^>]*>(\d+)<\/td><td[^>]*>(\d+)<\/td><td[^>]*>([\d.]+)<\/td>/g;
 
     let match;
-    while ((match = tableRegex.exec(html)) !== null) {
+    while ((match = tableRegex.exec(tbodyHtml)) !== null) {
         const teamSlug = match[1];
+
+        // Skip if this looks like a game URL
+        if (teamSlug.startsWith('game/') || teamSlug.includes('/')) {
+            continue;
+        }
+
         const wins = parseInt(match[2]);
         const losses = parseInt(match[3]);
         const pct = parseFloat(match[4]);
 
-        // Convert slug to proper name
+        // Convert slug to proper name (e.g., 'laces' -> 'Laces', 'lunar-owls' -> 'Lunar Owls')
         const teamName = teamSlug.split('-').map(word =>
             word.charAt(0).toUpperCase() + word.slice(1)
         ).join(' ');
 
         teams.push({
-            name: teamName.charAt(0).toUpperCase() + teamName.slice(1),
+            name: teamName,
             wins,
             losses,
             pct
